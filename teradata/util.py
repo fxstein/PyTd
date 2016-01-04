@@ -62,6 +62,15 @@ def isString(value):
         return isinstance(value, str)  # @UndefinedVariable
 
 
+def toUnicode(string):
+    if not isString(string):
+        string = str(string)
+    if sys.version_info[0] == 2:
+        if isinstance(string, str):
+            string = string.decode("utf8")
+    return string
+
+
 def raiseIfNone(name, value):
     if not value:
         raise InterfaceError(
@@ -445,7 +454,8 @@ def createTestCasePerDSN(testCase, baseCls, dataSourceNames):
 def setupTestUser(udaExec, dsn, user=None, perm=100000000):
     """A utility method for creating a test user to be use by unittests."""
     if user is None:
-        user = "py%std_%s_test" % (sys.version_info[0], getpass.getuser())
+        user = "py%s_%std_%s_test" % (
+            sys.version_info[0], sys.version_info[1], getpass.getuser())
     with udaExec.connect(dsn) as conn:
         try:
             conn.execute("DELETE DATABASE " + user)

@@ -23,17 +23,17 @@ Teradata REST."""
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import sys
-import json
-import base64
-import io
-import logging
 import atexit
-import time
+import base64
+import json
+import logging
 import ssl
+import sys
+import time
 
 from . import pulljson, util, datatypes
 from .api import *  # @UnusedWildImport # noqa
+
 
 if sys.version_info[0] == 2:
     import httplib as httplib  # @UnresolvedImport #@UnusedImport
@@ -74,6 +74,7 @@ class RestConnection:
         self.implicit = implicit
         self.transactionMode = transactionMode
         self.dataTypeConverter = dataTypeConverter
+        self.cursors = []
         # Support TERA and Teradata as transaction mode to be consistent with
         # ODBC.
         if transactionMode == "Teradata":
@@ -123,10 +124,12 @@ class RestConnection:
                 except InterfaceError as e:
                     # Ignore if the session is already closed.
                     if e.code != 404:
-                        raise e
+                        raise
             logger.info("Closing session: %s", self.sessionId)
             self.sessionId = None
             connections.remove(self)
+        for cursor in list(self.cursors):
+            cursor.close()
 
     def commit(self):
         with self.cursor() as cursor:
@@ -141,7 +144,7 @@ class RestConnection:
                 cursor.execute("ROLLBACK")
             except DatabaseError as e:
                 if e.code != ERROR_USER_GENERATED_TRANSACTION_ABORT:
-                    raise e
+                    raise
 
     def cursor(self):
         return RestCursor(self)
@@ -165,6 +168,7 @@ class RestCursor (util.Cursor):
         util.Cursor.__init__(
             self, connection, connection.dbType, connection.dataTypeConverter)
         self.conn = connection.template.connect()
+        connection.cursors.append(self)
 
     def callproc(self, procname, params, queryTimeout=None):
         inparams = None
@@ -395,11 +399,7 @@ class HttpConnection:
             raise InterfaceError(
                 REST_ERROR, 'Error accessing {}.  ERROR:  {}'.format(url, e))
         if response.status < 300:
-            if sys.version_info[0] == 2:
-                return pulljson.JSONPullParser(response)
-            else:
-                return pulljson.JSONPullParser(
-                    io.TextIOWrapper(response, encoding="utf8"))
+            return pulljson.JSONPullParser(response)
         if response.status < 400:
             raise InterfaceError(
                 response.status,
